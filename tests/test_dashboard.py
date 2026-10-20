@@ -11,7 +11,7 @@ class FakeService:
         self.devices = [{'name':'windows','slot':2,'managed':True,'upload':100,'download':200,'handshake':0,'export':True}]
         self.revoked=[]
     def status(self):
-        return {'devices':self.devices,'ip':'13.112.142.143','type':'t3.micro','credits':'standard','active':True,'checked_at':1}
+        return {'devices':self.devices,'ip':'203.0.113.1','type':'t3.micro','credits':'standard','active':True,'checked_at':1}
     def create(self,name):
         if any(d['name']==name for d in self.devices):raise ValueError('Device already exists')
         self.devices.append({'name':name,'slot':3,'managed':True,'export':True})
