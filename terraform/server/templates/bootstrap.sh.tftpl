@@ -1,0 +1,73 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+export DEBIAN_FRONTEND=noninteractive
+# EIP association happens just after launch. Wait/retry for outbound connectivity.
+for attempt in $(seq 1 30); do
+  if apt-get -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install -y wireguard nftables python3 unattended-upgrades; then
+    break
+  fi
+  if [ "$attempt" -eq 30 ]; then exit 1; fi
+  sleep 10
+done
+install -d -m 700 /etc/wireguard /etc/wireguard/clients
+if [ ! -f /etc/wireguard/server.key ]; then
+  wg genkey > /etc/wireguard/server.key
+fi
+wg pubkey < /etc/wireguard/server.key > /etc/wireguard/server.pub
+if [ ! -f /etc/wireguard/wg0.conf ]; then
+  {
+    printf '[Interface]\nAddress = 10.66.66.1/24, fd42:66:66::1/64\nListenPort = 51820\nPrivateKey = '
+    cat /etc/wireguard/server.key
+  } > /etc/wireguard/wg0.conf
+fi
+cat > /etc/sysctl.d/70-vpn.conf <<'SYSCTL'
+net.ipv4.ip_forward = 1
+net.ipv6.conf.all.forwarding = 0
+SYSCTL
+sysctl --system
+WAN=$(ip -4 route show default | awk 'NR==1 {print $5}')
+test -n "$WAN"
+# Dedicated host: own the nftables ruleset. Never run this on a shared server.
+cat > /etc/nftables.conf <<NFT
+#!/usr/sbin/nft -f
+flush ruleset
+table inet vpn {
+  chain input {
+    type filter hook input priority 0; policy accept;
+    iifname "wg0" drop
+  }
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+    ct state invalid drop
+    iifname "wg0" meta nfproto ipv6 drop
+    iifname "wg0" ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4 } drop
+    iifname "$WAN" oifname "wg0" ct state established,related accept
+    iifname "wg0" oifname "$WAN" ip saddr 10.66.66.0/24 accept
+  }
+}
+table ip vpn_nat {
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+    oifname "$WAN" ip saddr 10.66.66.0/24 masquerade
+  }
+}
+NFT
+nft -c -f /etc/nftables.conf
+systemctl enable --now nftables
+systemctl restart nftables
+install -d /etc/systemd/system/wg-quick@wg0.service.d
+cat > /etc/systemd/system/wg-quick@wg0.service.d/firewall.conf <<'UNIT'
+[Unit]
+Requires=nftables.service
+After=nftables.service
+UNIT
+printf '%s' '${client_helper}' | base64 --decode > /usr/local/sbin/vpn-client
+chmod 700 /usr/local/sbin/vpn-client
+cat > /etc/apt/apt.conf.d/20auto-upgrades <<'APT'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT
+# Reboot manually after kernel updates; automatic reboots would interrupt the VPN.
+systemctl daemon-reload
+systemctl enable --now wg-quick@wg0

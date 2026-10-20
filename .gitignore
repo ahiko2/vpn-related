@@ -1,0 +1,27 @@
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+*.conf
+*.key
+*.pem
+.env
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+home-vpn-iphone-qr.png
+.dashboard/
+.coverage
+htmlcov/
+
+# Local deployment history and superseded reference material
+DEPLOYMENT.md
+imported-vpn-draft/
+# Credential-bearing generated images and other local exports
+home-vpn-*-qr.png
+*.log

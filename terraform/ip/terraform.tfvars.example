@@ -1,0 +1,3 @@
+# Replace this example with your own verified AWS account ID.
+expected_account_id = "123456789012"
+region = "ap-northeast-1"
